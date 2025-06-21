@@ -1,81 +1,61 @@
-#include <IRremote.hpp>
+#define SEND_PWM_BY_TIMER
+//#define IR_SEND_PIN 3
+//#define IR_USE_AVR_TIMER2
+#include <IRremote.hpp> 
+#include <ir_NEC.hpp>
 
 constexpr int pinIrSend = 3;
-constexpr int pinCmdAmpPower = 4;
-constexpr int pinCmdAmpVolUp = 5;
-constexpr int pinCmdAmpVolDn = 6;
-constexpr int pinCmdTvPower = 7;
 
-constexpr int DELAY_AFTER_SEND = 2000;
+constexpr int DELAY_AFTER_SEND = 10;
 constexpr int FREQ_KHZ = 38;
-
-constexpr int AMP_ADDR = 0x1D00;
-constexpr int AMP_POWER = 0xB9;
-constexpr int AMP_VOLUP = 0xD9;
-constexpr int AMP_VOLDN = 0x59;
-
-constexpr int TV_ADDR = 0x20DF;
-constexpr int TV_POWER = 0x10;
-
-int lastAmpPower = 0;
-int lastVolUp = 0;
-int lastVolDown = 0;
-int lastTvPower = 0;
 
 void setup() {
 
   pinMode(pinIrSend, OUTPUT);
 
-  IrSender.begin(pinIrSend);
+  //IrSender.begin(pinIrSend);
   IrSender.enableIROut(FREQ_KHZ);
 
-  pinMode(pinCmdAmpPower, INPUT);
-  pinMode(pinCmdAmpVolUp, INPUT);
-  pinMode(pinCmdAmpVolDn, INPUT);
-  pinMode(pinCmdTvPower, INPUT);
-
   Serial.begin(115200);
-  Serial.println("Start");
+  Serial.println("IRblaster");
 }
 
 int last=0;
 
+unsigned char reverse(unsigned char b) {
+   b = (b & 0xF0) >> 4 | (b & 0x0F) << 4;
+   b = (b & 0xCC) >> 2 | (b & 0x33) << 2;
+   b = (b & 0xAA) >> 1 | (b & 0x55) << 1;
+   return b;
+}
+
 void loop() {
-    //last = !last;
-    //digitalWrite(pinIrSend, last);
+    auto line =  Serial.readStringUntil('\n');
+    auto colon = line.indexOf(':');
+    auto dot = line.indexOf('.');
+    if(colon != 4 || dot != 9) return;
 
-    int valAmpPower = 1;// digitalRead(pinCmdAmpPower);
-    int valVolUp = digitalRead(pinCmdAmpVolUp);
-    int valVolDown = digitalRead(pinCmdAmpVolDn);
-    int valTvPower = digitalRead(pinCmdTvPower);
+    uint16_t addr = strtol(line.substring(0,colon).c_str(),0,16);
+    uint16_t cmd = strtol(line.substring(colon+1,dot).c_str(),0,16);
 
-    if(valAmpPower == 1 && valAmpPower != lastAmpPower) {
-      Serial.println("AMP_POWER");
-      IrSender.sendNEC(AMP_ADDR, AMP_POWER, 1);
-      delay(DELAY_AFTER_SEND);    
-    }
+    // somehow we need to revers the bit order... (compared to LIRC keys)
+    uint8_t addr_lo = addr & 0xFF;
+    uint8_t addr_hi = (addr >> 8) & 0xFF;
+    uint8_t cmd_lo = cmd & 0xFF;
+    uint8_t cmd_hi = (cmd >> 8) & 0xFF;
+    uint16_t addr_rev = (reverse(addr_lo) << 8) | reverse(addr_hi);
+    uint16_t cmd_rev = (reverse(cmd_lo) << 8) | reverse(cmd_hi);
 
-    if(valVolUp == 1 && valVolUp != lastVolUp) {
-      Serial.println("AMP_VOLUP");
-      IrSender.sendNEC(AMP_ADDR, AMP_VOLUP, 1);
-      delay(DELAY_AFTER_SEND);    
-    }
+    Serial.print("addr = ");
+    Serial.print(addr);
+    Serial.print("addr_rev = ");
+    Serial.print(addr_rev);
+    Serial.print(" cmd = ");
+    Serial.print(cmd);
+    Serial.print(" cmd_rev = ");
+    Serial.println(cmd_rev);
 
-    if(valVolDown == 1 && valVolDown != lastVolDown) {
-      Serial.println("AMP_VOLDN");
-      IrSender.sendNEC(AMP_ADDR, AMP_VOLDN, 1);
-      delay(DELAY_AFTER_SEND);    
-    }
-
-    if(valTvPower == 1 && valTvPower != lastTvPower) {
-      Serial.println("TV_POWER");
-      IrSender.sendNEC(AMP_ADDR, TV_POWER, 1);
-      delay(DELAY_AFTER_SEND);    
-    }
-
-    lastAmpPower = valAmpPower;
-    lastVolUp = valVolUp;
-    lastVolDown = valVolDown;
-    lastTvPower = valTvPower;
-    
+    //sendExtendedNEC(pinIrSend, addr_rev, cmd_rev);
+    IrSender.sendOnkyo(addr_rev,cmd_rev,0);
+    delay(DELAY_AFTER_SEND);    
 }
